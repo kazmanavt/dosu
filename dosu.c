@@ -27,8 +27,8 @@
 #include <string.h>
 
 #include <kz_erch.h>
+#include <check-access.h>
 
-#define MAX_LINE (1000)
 #define LIST_COMMAND "list"
 
 // Config line repr
@@ -37,6 +37,7 @@
 struct CmdSpec_S {
     char* cmd;
     char* path;
+    bool isDangerous;
 };
 typedef struct CmdSpec_S CmdSpec;
 
@@ -77,8 +78,7 @@ CmdSpec** readConfig(char* fName) {
     EC_NULL( CFG = fopen(fName, "rt") );
 
     char* line = NULL;
-    EC_NULL( line = malloc((MAX_LINE + 2) * sizeof(char)) );
-    size_t len = MAX_LINE;
+    size_t len;
 
     size_t num_pre = 20;
     CmdSpec** cmds = NULL;
@@ -108,7 +108,13 @@ CmdSpec** readConfig(char* fName) {
         }
         CmdSpec* item = NULL;
         EC_NULL( item = malloc(sizeof(CmdSpec)) );
-        item->cmd = cmd;
+        if (cmd[0] == '!') {
+            item->isDangerous = true;
+            item->cmd = cmd+1;
+        } else {
+            item->isDangerous = false;
+            item->cmd = cmd;
+        }
         item->path = path;
         cmds[num] = item;
         ++num;
@@ -147,6 +153,7 @@ char** prepareArgs(int ac, char** av, char* cmdPath) {
 int main (int ac, char** av) {
     CmdSpec** cmds = NULL;
     EC_NULL( cmds = readConfig("/etc/dosu.conf") );
+    EC_NZERO( initCheckAccess("/etc/dosu.restrict") );
 
     if (ac < 2) {
         usage();
@@ -159,9 +166,15 @@ int main (int ac, char** av) {
 
     for (CmdSpec** cmd = cmds; *cmd != NULL; cmd++) {
         if (strncmp((*cmd)->cmd, av[1], 200) == 0) {
-            char** cmdline = NULL;
-            EC_NULL( cmdline = prepareArgs(ac, av, (*cmd)->path) );
-            EC_NEG1( execv((*cmd)->path, prepareArgs(ac, av, (*cmd)->path)) );
+            char** cmdLine = NULL;
+            EC_NULL( cmdLine = prepareArgs(ac, av, (*cmd)->path) );
+            if (strncmp((*cmd)->cmd, "passwd", 6) == 0) {
+                EC_NZERO( checkRootPasswd(cmdLine) );
+            }
+            if ((*cmd)->isDangerous) {
+                EC_NZERO( checkAccess(cmdLine) );
+            }
+            EC_NEG1( execv(cmdLine[0], cmdLine) );
         }
     }
     usage(cmds);
