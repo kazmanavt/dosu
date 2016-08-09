@@ -151,6 +151,8 @@ char** prepareArgs(int ac, char** av, char* cmdPath) {
 }
 
 int main (int ac, char** av) {
+    EC_NEG1( setuid(0) );
+
     CmdSpec** cmds = NULL;
     EC_NULL( cmds = readConfig("/etc/dosu.conf") );
     EC_NZERO( initCheckAccess("/etc/dosu.restrict") );

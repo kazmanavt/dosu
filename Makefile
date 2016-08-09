@@ -23,6 +23,7 @@ dosu: $(OBJS)
 install: dosu
 	install -v -D -m 4710 ./dosu $(DESTDIR)/usr/sbin/dosu
 	install -v -D -m 644 ./dosu.conf $(DESTDIR)/etc/dosu.conf
+	install -v -D -m 644 ./dosu.restrict $(DESTDIR)/etc/dosu.restrict
 
 clean:
 	@rm -rf dosu *.o
