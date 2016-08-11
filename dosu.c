@@ -179,7 +179,7 @@ int main (int ac, char** av) {
             EC_NEG1( execv(cmdLine[0], cmdLine) );
         }
     }
-    usage(cmds);
+    usage();
 
     return 0;
 

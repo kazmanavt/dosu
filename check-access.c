@@ -27,6 +27,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <time.h>
 
 
 #include <kz_erch.h>
@@ -40,6 +41,10 @@ typedef struct Path_s Path_t;
 static Path_t* rFiles = NULL;
 static Path_t* rDirs = NULL;
 
+/*
+ * normalize given path and add it to list of restricted dirs or files
+ * depending on its type
+ */
 char* processPath(char* path) {
     Path_t** root = path[strlen(path) - 1] == '/' ? &rDirs : &rFiles;
 
@@ -59,6 +64,10 @@ char* processPath(char* path) {
     );
 }
 
+
+/*
+ * expand given glob and pass each result to processPath()
+ */
 int processCfgItem(char* path) {
     glob_t globBuf;
     int state = 0, rc = 0;
@@ -84,6 +93,10 @@ int processCfgItem(char* path) {
     );
 }
 
+/*
+ * Parse restriction list, extract line by line globs stored in config file
+ * then pass it to processCfgItem()
+ */
 int initCheckAccess(char* confName) {
     FILE* CFG = NULL;
     EC_NULL( CFG = fopen(confName, "rt") );
@@ -127,11 +140,19 @@ int initCheckAccess(char* confName) {
     );
 }
 
-static char** curentCmdLine;
+static char** curentCmdLine; /* is set by checkAccess before tests starts */
+
+/* make log record if there was attempt to perform not granted actions */
 void logIncident() {
+    //char *ts = "YYYY-MM-DD hh:mm:ss";
+    char ts[20];
+    time_t _ts = time(NULL);
+    //strftime(ts, strlen(ts), "%F %T", localtime(&_ts));
+    strftime(ts, 20, "%F %T", localtime(&_ts));
+
     FILE* LOG = fopen("/var/log/dosu", "at");
     if (LOG == NULL) return;
-    fprintf(LOG, "ERR: Attempt to execute [ ");
+    fprintf(LOG, "[%s]: Attempt to execute [ ", ts);
     for (char** param_p = curentCmdLine; *param_p != NULL; param_p++){
         fprintf(LOG, "%s ", *param_p);
     }
@@ -139,6 +160,13 @@ void logIncident() {
     fclose(LOG);
 }
 
+
+
+/*
+ * if given path points to restricted file or is located under
+ * restricted catalog, then print log about incident and return 1
+ * return 0 if everything is OK
+ */
 int checkPath(char* path) {
     for (Path_t* dir = rDirs; dir != NULL; dir = dir->next) {
         if(strncmp(path, dir->path, strlen(dir->path)) == 0) {
@@ -156,9 +184,13 @@ int checkPath(char* path) {
     return 0;
 }
 
-int checkAccess(char** cmdline) {
-    curentCmdLine = cmdline;
-    for(char** param_p = cmdline + 1; *param_p != NULL; param_p++) {
+
+/* 
+ * checke if command line contain files or dirs, which is restricted to access
+ */
+int checkAccess(char** cmdLine) {
+    curentCmdLine = cmdLine;
+    for (char** param_p = cmdLine + 1; *param_p != NULL; param_p++) {
         char* path = realpath(*param_p, NULL);
         if ( path == NULL && errno != ENOENT) {
             EC_FAIL;
@@ -176,6 +208,42 @@ int checkAccess(char** cmdline) {
 }
 
 
+
+/*
+ * protect from changing root credentials
+ */
 int checkRootPasswd(char** cmdLine) {
-   return 0;
+    curentCmdLine = cmdLine;
+    int ac = 0;
+    for (char** p = cmdLine; *p != NULL; p++) {
+        ac++;
+    }
+
+    char* opts = ":kdluefx:n:w:i:S?";
+    struct option* lopts = {
+        { "keep-tokens", 0, NULL, 'k' },
+        { "delete", 0, NULL, 'd' },
+        { "lock", 0, NULL, 'l' },
+        { "unlock", 0, NULL, 'u' },
+        { "expire", 0, NULL, 'e' },
+        { "force", 0, NULL, 'f' },
+        { "maximum", 1, NULL, 'x' },
+        { "minimum", 1, NULL, 'n' },
+        { "warning", 1, NULL, 'w' },
+        { "inactive", 1, NULL, 'i' },
+        { "status", 0, NULL, 'S' },
+        { "stdin", 0, NULL, 's' },
+        { "help", 0, NULL, '?' },
+        { "usage", 0, NULL, 'g' },
+        { NULL, 0, NULL, 0 }
+    };
+    
+    while(getopt_long(ac, cmdLine, opts, lopts, NULL) != -1) { }
+
+    if(optind < ac && strcmp(cmdLine[optind], "root") != 0) {
+        return 0;
+    } else {
+        logIncident();
+        return 1;
+    }
 }
