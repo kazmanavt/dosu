@@ -31,5 +31,9 @@ clean:
 
 
 kz_erch.o: kz_erch.c kz_erch.h
-check-access.o: check-access.c kz_erch.h
-dosu.o: dosu.c kz_erch.h check-access.h
+jconf.o: jconf.c nxjson.h kz_erch.h
+args-check.o: args-check.c kz_erch.h
+path-check.o: path-check.c kz_erch.h
+opts-check.o: opts-check.c kz_erch.h
+grant-access.o: grant-access.c kz_erch.h jconf.h args-check.h path-check.h opts-check.h
+dosu.o: dosu.c kz_erch.h grant-access.h jconf.h
