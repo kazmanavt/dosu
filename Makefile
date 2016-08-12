@@ -21,9 +21,8 @@ dosu: $(OBJS)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 install: dosu
-	install -v -D -m 4710 ./dosu $(DESTDIR)/usr/sbin/dosu
-	install -v -D -m 644 ./dosu.conf $(DESTDIR)/etc/dosu.conf
-	install -v -D -m 644 ./dosu.restrict $(DESTDIR)/etc/dosu.restrict
+	install -v -D -m 4710 -g vss ./dosu $(DESTDIR)/usr/sbin/dosu
+	install -v -D -m 600 ./dosu.conf $(DESTDIR)/etc/dosu.conf
 
 clean:
 	@rm -rf dosu *.o

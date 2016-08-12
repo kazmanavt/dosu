@@ -1,4 +1,0 @@
-# List of paths restricted to any command.
-# Each line is treated as glob and expanded by call to glob.
-# Resulting list is used to check access for dangerous commands
-
