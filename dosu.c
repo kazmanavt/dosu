@@ -27,19 +27,12 @@
 #include <string.h>
 
 #include <kz_erch.h>
-#include <check-access.h>
+#include <jconf.h>
+#include <grant-access.h>
+
 
 #define LIST_COMMAND "list"
 
-// Config line repr
-//    cmd - command to be given
-//    path - program to be executed
-struct CmdSpec_S {
-    char* cmd;
-    char* path;
-    bool isDangerous;
-};
-typedef struct CmdSpec_S CmdSpec;
 
 void usage() {
     printf("Usage: dosu <command> [options]\n");
@@ -47,93 +40,23 @@ void usage() {
     printf("    Selects executable by *command* parameter\n");
     printf("\n    Run 'dosu %s' to check avalable commands and corresponding executables\n\n", LIST_COMMAND);
 }
-void list(CmdSpec** cmds) {
+
+
+int list(void) {
     printf("Available commands:\n");
-    for (CmdSpec** cmd = cmds; *cmd != NULL; cmd++) {
-        printf("   %s: %s\n", (*cmd)->cmd, (*cmd)->path);
-    }
-}
-
-// check alternate config existance
-// used only during development
-#ifdef DEBUG
-char* findConfig() {
-    struct stat junk;
-    char* confFileName = getenv("DOSU_CONF");
-    if (stat(confFileName, &junk) != 0) {
-        confFileName = "/etc/dosu.conf";
-        if (stat(confFileName, &junk) != 0) {
-            printf("ERR: No config file\n");
-            exit(1);
-        }
-    }
-    return confFileName;
-}
-#endif
-
-// loads commands granted to execute from config
-// builds buffer with pointers to command specification, NULl terminated
-CmdSpec** readConfig(char* fName) {
-    FILE* CFG = NULL;
-    EC_NULL( CFG = fopen(fName, "rt") );
-
-    char* line = NULL;
-    size_t len;
-
-    size_t num_pre = 20;
-    CmdSpec** cmds = NULL;
-    EC_NULL( cmds = malloc(num_pre * sizeof(CmdSpec*)) );
-    
-    size_t num = 0;
-    while (1) {
-        EC_NEG1 (getline(&line, &len, CFG) );
-
-        int wsp = strspn(line, " \t");
-        line = line + wsp;
-        len -= wsp;
-        if (line[0] == '#') {
-            continue;
-        }
-
-        char* cmd;
-        char* path;
-        int rc = 0;
-        EC_ERRNO(rc = sscanf(line, "%50ms %200ms", &cmd, &path) );
-        if (rc < 2) {
-            continue;
-        }
-        if (num >= num_pre) {
-            EC_REALLOC(cmds, num_pre + 20);
-            num_pre += 20;   
-        }
-        CmdSpec* item = NULL;
-        EC_NULL( item = malloc(sizeof(CmdSpec)) );
-        if (cmd[0] == '!') {
-            item->isDangerous = true;
-            item->cmd = cmd+1;
-        } else {
-            item->isDangerous = false;
-            item->cmd = cmd;
-        }
-        item->path = path;
-        cmds[num] = item;
-        ++num;
+    JCFobj cmd;
+    EC_ERRNO( cmd = jcf_o1st(NULL, ".commands") );
+    while (cmd != NULL) {
+        printf("  %s\n", jcf_oname(cmd));
+        EC_ERRNO( cmd = jcf_onext(cmd) );
     }
 
-    EC_CLEAN_SECTION (
-        if (CFG != NULL) {
-            if (feof(CFG)) {
-                ec_clean();
-                fclose(CFG);
-                cmds[num] = NULL;
-                return cmds;
-            } else {
-                fclose(CFG);
-            }
-       }
-       return NULL;
+    return 0;
+    EC_CLEAN_SECTION(
+        return -1;
     );
 }
+
 
 char** prepareArgs(int ac, char** av, char* cmdPath) {
     char **args = NULL;
@@ -153,32 +76,33 @@ char** prepareArgs(int ac, char** av, char* cmdPath) {
 int main (int ac, char** av) {
     EC_NEG1( setuid(0) );
 
-    CmdSpec** cmds = NULL;
-    EC_NULL( cmds = readConfig("/etc/dosu.conf") );
-    EC_NZERO( initCheckAccess("/etc/dosu.restrict") );
+    jcf_load("/etc/dosu.conf");
 
     if (ac < 2) {
         usage();
         return 0;
     }
     if (strncmp(av[1], LIST_COMMAND, strlen(LIST_COMMAND)) == 0) {
-        list(cmds);
+        list();
         return 0;
     }
 
-    for (CmdSpec** cmd = cmds; *cmd != NULL; cmd++) {
-        if (strncmp((*cmd)->cmd, av[1], 200) == 0) {
+    JCFobj cmd;
+    EC_ERRNO( cmd = jcf_o1st(NULL, ".commands") );
+    while (cmd != NULL) {
+        if (strcmp(av[1], jcf_oname(cmd)) == 0) {
             char** cmdLine = NULL;
-            EC_NULL( cmdLine = prepareArgs(ac, av, (*cmd)->path) );
-            if (strncmp((*cmd)->cmd, "passwd", 6) == 0) {
-                EC_NZERO( checkRootPasswd(cmdLine) );
-            }
-            if ((*cmd)->isDangerous) {
-                EC_NZERO( checkAccess(cmdLine) );
-            }
+            char* path;
+            EC_ERRNO( path = jcf_s(cmd, ".path") );
+            EC_NULL( cmdLine = prepareArgs(ac, av, path) );
+            EC_NEG1( grantAccess(cmdLine, cmd) );
+            jcf_free();
+
             EC_NEG1( execv(cmdLine[0], cmdLine) );
         }
+        EC_ERRNO( cmd = jcf_onext(cmd) );
     }
+
     usage();
 
     return 0;
